@@ -1,5 +1,5 @@
 -- ============================================================================
--- SupplyChain FinOps Agent — Database Setup
+-- LedgerLink — Database Setup
 -- ============================================================================
 -- This script creates the foundational Snowflake infrastructure:
 --   • Database & Schemas
@@ -10,40 +10,40 @@
 -- ============================================================================
 
 -- ============================================================================
--- 1. CREATE DATABASE & SCHEMAS
+-- 1. CREATE DATABASE IF NOT EXISTS & SCHEMAS
 -- ============================================================================
 
-CREATE DATABASE IF NOT EXISTS SUPPLY_CHAIN_FINOPS
-    COMMENT = 'SupplyChain FinOps Agent — AI-driven supply chain financial risk intelligence';
+CREATE DATABASE IF NOT EXISTS IF NOT EXISTS SUPPLY_CHAIN_FINOPS
+    COMMENT = 'LedgerLink — AI-driven supply chain financial risk intelligence';
 
 USE DATABASE SUPPLY_CHAIN_FINOPS;
 
 -- Core schema for transactional/operational data
-CREATE SCHEMA IF NOT EXISTS CORE
+CREATE SCHEMA IF NOT EXISTS IF NOT EXISTS CORE
     COMMENT = 'Core transactional data: POs, invoices, payments, shipments';
 
 -- Analytics schema for ML models, anomaly results, and investigation outputs
-CREATE SCHEMA IF NOT EXISTS ANALYTICS
+CREATE SCHEMA IF NOT EXISTS IF NOT EXISTS ANALYTICS
     COMMENT = 'ML models, anomaly detection results, investigation logs';
 
 -- Unstructured data schema for contracts, communications, documents
-CREATE SCHEMA IF NOT EXISTS UNSTRUCTURED
+CREATE SCHEMA IF NOT EXISTS IF NOT EXISTS UNSTRUCTURED
     COMMENT = 'Supplier contracts, communications, and document text data';
 
 -- Audit schema for compliance and action tracking
-CREATE SCHEMA IF NOT EXISTS AUDIT
+CREATE SCHEMA IF NOT EXISTS IF NOT EXISTS AUDIT
     COMMENT = 'Audit trail, action logs, and compliance records';
 
 -- ============================================================================
 -- 2. CREATE VIRTUAL WAREHOUSE
 -- ============================================================================
 
-CREATE WAREHOUSE IF NOT EXISTS FINOPS_WH
+CREATE WAREHOUSE IF NOT EXISTS IF NOT EXISTS FINOPS_WH
     WAREHOUSE_SIZE = 'X-SMALL'
     AUTO_SUSPEND = 120            -- Suspend after 2 minutes of inactivity
     AUTO_RESUME = TRUE
     INITIALLY_SUSPENDED = TRUE
-    COMMENT = 'Warehouse for SupplyChain FinOps Agent workloads';
+    COMMENT = 'Warehouse for LedgerLink workloads';
 
 USE WAREHOUSE FINOPS_WH;
 

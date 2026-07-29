@@ -1,5 +1,5 @@
 -- ============================================================================
--- SupplyChain FinOps Agent — ML Model Training
+-- LedgerLink — ML Model Training
 -- ============================================================================
 -- Creates and trains Snowflake ML models for:
 --   1. Invoice Amount Anomaly Detection

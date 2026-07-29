@@ -1,4 +1,4 @@
-# SupplyChain FinOps Agent — Sample CoCo CLI Demo Transcript
+# LedgerLink — Sample CoCo CLI Demo Transcript
 
 > This document shows a sample CoCo CLI session demonstrating the full end-to-end workflow.
 > This is what a successful demo execution looks like.
@@ -238,7 +238,7 @@ Executing actions for ANO-004 (TIMING_ANOMALY)...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ╔══════════════════════════════════════════════════════════════════════╗
-║         SUPPLYCHAIN FINOPS AGENT — EXECUTIVE SUMMARY               ║
+║         LEDGERLINK — EXECUTIVE SUMMARY               ║
 ║         Report Generated: 2026-07-24T15:45:00                      ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║                                                                     ║

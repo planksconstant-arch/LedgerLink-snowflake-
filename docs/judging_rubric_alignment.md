@@ -1,4 +1,4 @@
-# Judging Rubric Alignment — SupplyChain FinOps Agent
+# Judging Rubric Alignment — LedgerLink
 
 > This document maps every aspect of our solution to the hackathon judging criteria,
 > providing explicit evidence for each requirement.

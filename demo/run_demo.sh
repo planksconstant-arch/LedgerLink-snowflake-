@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# SupplyChain FinOps Agent — End-to-End Demo Script
+# LedgerLink — End-to-End Demo Script
 # ============================================================================
 # This script demonstrates the complete workflow using the CoCo CLI.
 # 
@@ -19,7 +19,7 @@ set -e
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════════╗"
 echo "║                                                                    ║"
-echo "║     ❄️  SupplyChain FinOps Agent — Live Demo                       ║"
+echo "║     ❄️  LedgerLink — Live Demo                       ║"
 echo "║     Powered by Snowflake CoCo CLI                                 ║"
 echo "║                                                                    ║"
 echo "╚══════════════════════════════════════════════════════════════════════╝"

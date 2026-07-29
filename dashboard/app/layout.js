@@ -1,7 +1,7 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'SupplyChain FinOps Agent | Snowflake',
+  title: 'LedgerLink | Snowflake',
   description: 'AI-driven multi-agent supply chain financial risk intelligence powered by Snowflake Cortex',
   keywords: 'supply chain, finops, anomaly detection, snowflake, cortex ai',
 };

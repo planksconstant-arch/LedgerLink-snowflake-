@@ -1,5 +1,5 @@
 -- ============================================================================
--- SupplyChain FinOps Agent — Cortex AI Function Wrappers
+-- LedgerLink — Cortex AI Function Wrappers
 -- ============================================================================
 -- Creates views and stored procedures that leverage Snowflake Cortex AI
 -- functions for text analytics on supplier data:

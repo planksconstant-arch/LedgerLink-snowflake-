@@ -1,5 +1,5 @@
 -- ============================================================================
--- SupplyChain FinOps Agent — Table Definitions
+-- LedgerLink — Table Definitions
 -- ============================================================================
 -- Creates all 12 tables across 4 schemas:
 --   CORE:         SUPPLIERS, PURCHASE_ORDERS, PO_LINE_ITEMS, INVOICES,

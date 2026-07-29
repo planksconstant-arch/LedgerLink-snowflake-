@@ -1,5 +1,5 @@
 -- ============================================================================
--- SupplyChain FinOps Agent — Audit Trail & Scheduled Tasks
+-- LedgerLink — Audit Trail & Scheduled Tasks
 -- ============================================================================
 -- Sets up:
 --   1. Audit trail procedures for logging agent actions
@@ -276,7 +276,7 @@ $$;
 -- Insert initial audit entry
 CALL AUDIT.SP_LOG_ACTION(
     'SYSTEM_INIT', 'AUTO_EXECUTED', NULL, NULL,
-    'SupplyChain FinOps Agent system initialized. All tables, ML models, and Cortex functions deployed.',
+    'LedgerLink system initialized. All tables, ML models, and Cortex functions deployed.',
     'SUCCESS'
 );
 

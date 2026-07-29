@@ -1,8 +1,8 @@
-# Architecture — SupplyChain FinOps Agent
+# Architecture — LedgerLink
 
 ## System Overview
 
-The SupplyChain FinOps Agent is a multi-agent AI system built on Snowflake CoCo CLI
+The LedgerLink is a multi-agent AI system built on Snowflake CoCo CLI
 that autonomously detects, investigates, and resolves supply chain financial anomalies.
 
 ## Architecture Diagram

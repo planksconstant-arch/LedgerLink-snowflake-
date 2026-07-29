@@ -1,5 +1,5 @@
 -- ============================================================================
--- SupplyChain FinOps Agent — Synthetic Seed Data
+-- LedgerLink — Synthetic Seed Data
 -- ============================================================================
 -- Generates 500+ rows of realistic data with 10 injected anomalies:
 --   • 30 suppliers across 5 categories
