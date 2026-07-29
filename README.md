@@ -1,6 +1,6 @@
 # LedgerLink
 
-**By Team LedgerLink**
+**A Solo Hackathon Submission**
 
 > **An AI-driven, multi-agent system that autonomously detects supply chain financial anomalies, investigates root causes across structured + unstructured data, and triggers contextual recovery actions — all orchestrated through Snowflake CoCo CLI.**
 
@@ -10,17 +10,57 @@
 
 ---
 
-### 🚀 Quick Demo (3 Minutes)
+### Quick Demo (3 Minutes)
+**[Click here to open the Live Streamlit App](https://ledgerlink--demo.streamlit.app/)**
+
 For judging evaluation, please use our 1-click Judge Mode.
 **[View the Judges Walkthrough Guide](./docs/judges_walkthrough.md)** for the step-by-step evaluation script.
 
-### 🏆 Business Impact Scorecard (Simulated Last 30 Days)
+### Business Impact Scorecard (Simulated Last 30 Days)
 | Metric | Value | Impact |
 |:---|:---|:---|
 | **Capital Protected** | **$1.2M** | Prevented fraudulent or duplicate payouts. |
 | **Detection Precision** | **99.2%** | High true-positive rate via Cortex ML filtering. |
 | **Time-to-Detect** | **< 45 seconds** | Down from an industry average of 15 days. |
 | **Human Overrides** | **2** | Safety gates prevented 2 false-positive automated actions. |
+
+---
+
+## 👨‍⚖️ Judge Quick Start (Snowflake CoCo)
+
+If you have CoCo CLI installed and want to run the full master orchestrator on your own Snowflake account, follow these requirements:
+- **Expected Runtime**: ~2-4 minutes for the full multi-agent supply chain run.
+- **Warehouse**: A standard `X-SMALL` warehouse is perfectly sufficient.
+- **Role Requirements**: Needs a role with `CREATE DATABASE`, `CREATE SCHEMA`, and execute privileges for Cortex ML functions.
+
+**Exact CoCo Commands to run the pipeline:**
+```bash
+# 1. Setup the Database and Models
+cortex -p "Execute the SQL file sql/00_setup_database.sql"
+cortex -p "Execute the SQL file sql/01_create_tables.sql"
+cortex -p "Execute the SQL file sql/02_seed_data.sql"
+cortex -p "Execute the SQL file sql/03_create_ml_models.sql"
+cortex -p "Execute the SQL file sql/04_cortex_functions.sql"
+cortex -p "Execute the SQL file sql/05_audit_and_tasks.sql"
+
+# 2. Run the Multi-Agent Orchestrator
+cortex -w . -p '$orchestrate-supply-chain Run a complete financial risk assessment for the last 60 days'
+```
+
+**Expected Sample Output:**
+After running the orchestrator, you can verify the system successfully executed by querying the Audit Table:
+```sql
+SELECT * FROM LEDGERLINK.PUBLIC.AUDIT_LOG ORDER BY TIMESTAMP DESC LIMIT 5;
+```
+*You should see rows indicating actions like "Payment Hold" with status "SUCCESS" and a cryptographic HMAC signature verifying the action was authorized by the AI.*
+
+---
+
+## 🛡️ Safety & Sandboxing
+
+Because this AI system touches financial data and triggers recovery actions (e.g., stopping vendor payments), **safety is our #1 priority**. 
+- **Action-Agent Sandboxing:** In this repository, the action-agent is safely sandboxed. It generates a cryptographic payload and logs the intended financial action to the `AUDIT_LOG` table, but it does *not* make live API calls to external payment gateways (like Stripe or SAP) unless explicitly un-sandboxed.
+- **Human-in-the-Loop:** Actions exceeding a $200k risk threshold are automatically blocked by the circuit breaker and routed to the Streamlit dashboard for explicit human approval via the Judge Mode.
 
 ---
 

@@ -4,6 +4,16 @@ Welcome to the LedgerLink evaluation! This document is designed to help you quic
 
 ---
 
+## ✅ One-Page Printable Checklist
+
+If you are grading this project, follow this 4-step checklist to easily verify the entire system end-to-end:
+1. `[ ]` **Run SQL Setup**: Run the initialization SQL via CoCo (see Judge Quick Start in `README.md`).
+2. `[ ]` **Run Orchestrator**: Run `$orchestrate-supply-chain` via CoCo CLI to execute the AI agents.
+3. `[ ]` **Open Streamlit**: Open the live demo dashboard (`https://ledgerlink--demo.streamlit.app/`).
+4. `[ ]` **Verify Anomalies**: Check the "Live Operations" tab to see the injected anomalies (A1/A2) detected, and check the "Audit Trail" tab to see the cryptographic actions logged by the AI.
+
+---
+
 ## 📽️ The 3-Minute Pitch Structure (For the Video)
 
 **Slide 1: Problem & Impact**
