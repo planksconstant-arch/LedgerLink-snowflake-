@@ -1,0 +1,415 @@
+-- ============================================================================
+-- SupplyChain FinOps Agent — ML Model Training
+-- ============================================================================
+-- Creates and trains Snowflake ML models for:
+--   1. Invoice Amount Anomaly Detection
+--   2. Payment Amount Anomaly Detection
+--   3. Spend Forecasting per Supplier Category
+--
+-- Prerequisites: Run 00, 01, 02 scripts first.
+-- ============================================================================
+
+USE DATABASE SUPPLY_CHAIN_FINOPS;
+USE WAREHOUSE FINOPS_WH;
+USE SCHEMA ANALYTICS;
+
+-- ============================================================================
+-- 1. PREPARE TRAINING DATA VIEWS
+-- ============================================================================
+
+-- Training view: Invoice amounts time series (exclude known anomalies for clean training)
+-- Includes a minimum data threshold to prevent cold start issues
+CREATE OR REPLACE VIEW CORE.V_INVOICE_TRAINING AS
+WITH supplier_counts AS (
+    SELECT SUPPLIER_ID FROM CORE.INVOICES 
+    WHERE STATUS IN ('PAID', 'APPROVED') AND SUBMITTED_DATE < '2026-06-01' 
+    GROUP BY SUPPLIER_ID HAVING COUNT(*) >= 5
+)
+SELECT 
+    i.SUBMITTED_DATE AS TS,
+    i.TOTAL_AMOUNT AS AMOUNT,
+    i.SUPPLIER_ID
+FROM CORE.INVOICES i
+JOIN supplier_counts sc ON i.SUPPLIER_ID = sc.SUPPLIER_ID
+WHERE i.STATUS IN ('PAID', 'APPROVED')
+  AND i.SUBMITTED_DATE < '2026-06-01'  -- Train on Jan-May, detect on June+
+  AND i.INVOICE_ID NOT IN ('INV-071', 'INV-073', 'INV-075', 'INV-076')  -- Exclude injected anomalies
+ORDER BY i.SUBMITTED_DATE;
+
+-- Training view: Payment amounts time series
+CREATE OR REPLACE VIEW CORE.V_PAYMENT_TRAINING AS
+WITH supplier_counts AS (
+    SELECT SUPPLIER_ID FROM CORE.PAYMENTS 
+    WHERE STATUS = 'COMPLETED' AND PAYMENT_DATE < '2026-06-01' 
+    GROUP BY SUPPLIER_ID HAVING COUNT(*) >= 5
+)
+SELECT 
+    p.PAYMENT_DATE AS TS,
+    p.AMOUNT,
+    p.SUPPLIER_ID
+FROM CORE.PAYMENTS p
+JOIN supplier_counts sc ON p.SUPPLIER_ID = sc.SUPPLIER_ID
+WHERE p.STATUS = 'COMPLETED'
+  AND p.PAYMENT_DATE < '2026-06-01'
+  AND p.PAYMENT_ID NOT IN ('PAY-071', 'PAY-072', 'PAY-073')
+ORDER BY p.PAYMENT_DATE;
+
+-- Inference view: Recent invoices to scan for anomalies
+CREATE OR REPLACE VIEW CORE.V_INVOICE_INFERENCE AS
+SELECT 
+    SUBMITTED_DATE AS TS,
+    TOTAL_AMOUNT AS AMOUNT,
+    SUPPLIER_ID
+FROM CORE.INVOICES
+WHERE SUBMITTED_DATE >= '2026-06-01'
+ORDER BY SUBMITTED_DATE;
+
+-- Inference view: Recent payments to scan
+CREATE OR REPLACE VIEW CORE.V_PAYMENT_INFERENCE AS
+SELECT 
+    PAYMENT_DATE AS TS,
+    AMOUNT,
+    SUPPLIER_ID
+FROM CORE.PAYMENTS
+WHERE PAYMENT_DATE >= '2026-06-01'
+ORDER BY PAYMENT_DATE;
+
+-- ============================================================================
+-- 2. TRAIN ANOMALY DETECTION MODELS
+-- ============================================================================
+
+-- Model 1: Invoice Amount Anomaly Detection
+-- Detects invoices with statistically unusual amounts
+CREATE OR REPLACE SNOWFLAKE.ML.ANOMALY_DETECTION INVOICE_ANOMALY_MODEL(
+    INPUT_DATA => SYSTEM$REFERENCE('VIEW', 'CORE.V_INVOICE_TRAINING'),
+    SERIES_COLNAME => 'SUPPLIER_ID',
+    TIMESTAMP_COLNAME => 'TS',
+    TARGET_COLNAME => 'AMOUNT',
+    LABEL_COLNAME => ''
+);
+
+-- Model 2: Payment Amount Anomaly Detection
+-- Detects payments with statistically unusual amounts
+CREATE OR REPLACE SNOWFLAKE.ML.ANOMALY_DETECTION PAYMENT_ANOMALY_MODEL(
+    INPUT_DATA => SYSTEM$REFERENCE('VIEW', 'CORE.V_PAYMENT_TRAINING'),
+    SERIES_COLNAME => 'SUPPLIER_ID',
+    TIMESTAMP_COLNAME => 'TS',
+    TARGET_COLNAME => 'AMOUNT',
+    LABEL_COLNAME => ''
+);
+
+-- ============================================================================
+-- 3. RUN ANOMALY DETECTION ON RECENT DATA
+-- ============================================================================
+
+-- Detect invoice anomalies in June+ data
+CREATE OR REPLACE TABLE ANALYTICS.INVOICE_ANOMALIES AS
+SELECT * FROM TABLE(
+    ANALYTICS.INVOICE_ANOMALY_MODEL!DETECT_ANOMALIES(
+        INPUT_DATA => SYSTEM$REFERENCE('VIEW', 'CORE.V_INVOICE_INFERENCE'),
+        SERIES_COLNAME => 'SUPPLIER_ID',
+        TIMESTAMP_COLNAME => 'TS',
+        TARGET_COLNAME => 'AMOUNT',
+        CONFIG_OBJECT => {'prediction_interval': 0.99}
+    )
+);
+
+-- Detect payment anomalies in June+ data
+CREATE OR REPLACE TABLE ANALYTICS.PAYMENT_ANOMALIES AS
+SELECT * FROM TABLE(
+    ANALYTICS.PAYMENT_ANOMALY_MODEL!DETECT_ANOMALIES(
+        INPUT_DATA => SYSTEM$REFERENCE('VIEW', 'CORE.V_PAYMENT_INFERENCE'),
+        SERIES_COLNAME => 'SUPPLIER_ID',
+        TIMESTAMP_COLNAME => 'TS',
+        TARGET_COLNAME => 'AMOUNT',
+        CONFIG_OBJECT => {'prediction_interval': 0.99}
+    )
+);
+
+-- ============================================================================
+-- 4. TRAIN SPEND FORECASTING MODEL
+-- ============================================================================
+
+-- Training view: Monthly spend by supplier category
+CREATE OR REPLACE VIEW CORE.V_MONTHLY_SPEND AS
+SELECT 
+    DATE_TRUNC('MONTH', p.PAYMENT_DATE)::DATE AS TS,
+    s.CATEGORY AS SERIES,
+    SUM(p.AMOUNT) AS TOTAL_SPEND
+FROM CORE.PAYMENTS p
+JOIN CORE.INVOICES i ON p.INVOICE_ID = i.INVOICE_ID
+JOIN CORE.SUPPLIERS s ON p.SUPPLIER_ID = s.SUPPLIER_ID
+WHERE p.STATUS = 'COMPLETED'
+  AND p.PAYMENT_DATE < '2026-06-01'
+GROUP BY 1, 2
+ORDER BY 1, 2;
+
+-- Spend Forecast Model: Predicts expected monthly spend by category
+CREATE OR REPLACE SNOWFLAKE.ML.FORECAST SPEND_FORECAST_MODEL(
+    INPUT_DATA => SYSTEM$REFERENCE('VIEW', 'CORE.V_MONTHLY_SPEND'),
+    SERIES_COLNAME => 'SERIES',
+    TIMESTAMP_COLNAME => 'TS',
+    TARGET_COLNAME => 'TOTAL_SPEND'
+);
+
+-- Generate 3-month forecast (June, July, August 2026)
+CREATE OR REPLACE TABLE ANALYTICS.SPEND_FORECAST AS
+SELECT * FROM TABLE(
+    ANALYTICS.SPEND_FORECAST_MODEL!FORECAST(
+        FORECASTING_PERIODS => 3,
+        CONFIG_OBJECT => {'prediction_interval': 0.95}
+    )
+);
+
+-- ============================================================================
+-- 5. CREATE SUMMARY VIEWS FOR AGENT CONSUMPTION
+-- ============================================================================
+
+-- View: All detected anomalies with context
+CREATE OR REPLACE VIEW ANALYTICS.V_ALL_ANOMALIES AS
+
+-- Invoice anomalies
+SELECT 
+    'INVOICE' AS SOURCE_TYPE,
+    ia.SERIES AS SUPPLIER_ID,
+    s.SUPPLIER_NAME,
+    ia.TS AS EVENT_DATE,
+    ia.AMOUNT AS ACTUAL_VALUE,
+    ia.FORECAST AS EXPECTED_VALUE,
+    ia.AMOUNT - ia.FORECAST AS DEVIATION,
+    ROUND(ABS(ia.AMOUNT - ia.FORECAST) / NULLIF(ia.FORECAST, 0) * 100, 2) AS DEVIATION_PCT,
+    ia.IS_ANOMALY,
+    CASE 
+        WHEN ABS(ia.AMOUNT - ia.FORECAST) / NULLIF(ia.FORECAST, 0) > 0.5 THEN 'CRITICAL'
+        WHEN ABS(ia.AMOUNT - ia.FORECAST) / NULLIF(ia.FORECAST, 0) > 0.2 THEN 'WARNING'
+        ELSE 'INFO'
+    END AS SEVERITY,
+    i.INVOICE_ID,
+    i.INVOICE_NUMBER,
+    i.PO_ID,
+    i.STATUS AS INVOICE_STATUS,
+    i.NOTES
+FROM ANALYTICS.INVOICE_ANOMALIES ia
+LEFT JOIN CORE.INVOICES i 
+    ON ia.TS = i.SUBMITTED_DATE 
+    AND ia.SERIES = i.SUPPLIER_ID 
+    AND ABS(ia.AMOUNT - i.TOTAL_AMOUNT) < 1
+LEFT JOIN CORE.SUPPLIERS s ON ia.SERIES = s.SUPPLIER_ID
+WHERE ia.IS_ANOMALY = TRUE
+
+UNION ALL
+
+-- Payment anomalies
+SELECT 
+    'PAYMENT' AS SOURCE_TYPE,
+    pa.SERIES AS SUPPLIER_ID,
+    s.SUPPLIER_NAME,
+    pa.TS AS EVENT_DATE,
+    pa.AMOUNT AS ACTUAL_VALUE,
+    pa.FORECAST AS EXPECTED_VALUE,
+    pa.AMOUNT - pa.FORECAST AS DEVIATION,
+    ROUND(ABS(pa.AMOUNT - pa.FORECAST) / NULLIF(pa.FORECAST, 0) * 100, 2) AS DEVIATION_PCT,
+    pa.IS_ANOMALY,
+    CASE 
+        WHEN ABS(pa.AMOUNT - pa.FORECAST) / NULLIF(pa.FORECAST, 0) > 0.5 THEN 'CRITICAL'
+        WHEN ABS(pa.AMOUNT - pa.FORECAST) / NULLIF(pa.FORECAST, 0) > 0.2 THEN 'WARNING'
+        ELSE 'INFO'
+    END AS SEVERITY,
+    p.INVOICE_ID AS INVOICE_ID,
+    NULL AS INVOICE_NUMBER,
+    NULL AS PO_ID,
+    p.STATUS AS INVOICE_STATUS,
+    p.FLAG_REASON AS NOTES
+FROM ANALYTICS.PAYMENT_ANOMALIES pa
+LEFT JOIN CORE.PAYMENTS p 
+    ON pa.TS = p.PAYMENT_DATE 
+    AND pa.SERIES = p.SUPPLIER_ID 
+    AND ABS(pa.AMOUNT - p.AMOUNT) < 1
+LEFT JOIN CORE.SUPPLIERS s ON pa.SERIES = s.SUPPLIER_ID
+WHERE pa.IS_ANOMALY = TRUE
+
+ORDER BY SEVERITY, DEVIATION_PCT DESC;
+
+-- View: Spend forecast vs actuals comparison
+CREATE OR REPLACE VIEW ANALYTICS.V_FORECAST_VS_ACTUAL AS
+SELECT
+    f.TS AS FORECAST_MONTH,
+    f.SERIES AS CATEGORY,
+    f.FORECAST AS FORECASTED_SPEND,
+    f.LOWER_BOUND,
+    f.UPPER_BOUND,
+    COALESCE(a.ACTUAL_SPEND, 0) AS ACTUAL_SPEND,
+    COALESCE(a.ACTUAL_SPEND, 0) - f.FORECAST AS VARIANCE,
+    CASE 
+        WHEN COALESCE(a.ACTUAL_SPEND, 0) > f.UPPER_BOUND THEN 'OVER_BUDGET'
+        WHEN COALESCE(a.ACTUAL_SPEND, 0) < f.LOWER_BOUND THEN 'UNDER_BUDGET'
+        ELSE 'ON_TRACK'
+    END AS BUDGET_STATUS
+FROM ANALYTICS.SPEND_FORECAST f
+LEFT JOIN (
+    SELECT 
+        DATE_TRUNC('MONTH', p.PAYMENT_DATE)::DATE AS MONTH,
+        s.CATEGORY,
+        SUM(p.AMOUNT) AS ACTUAL_SPEND
+    FROM CORE.PAYMENTS p
+    JOIN CORE.SUPPLIERS s ON p.SUPPLIER_ID = s.SUPPLIER_ID
+    WHERE p.STATUS = 'COMPLETED'
+      AND p.PAYMENT_DATE >= '2026-06-01'
+    GROUP BY 1, 2
+) a ON f.TS = a.MONTH AND f.SERIES = a.CATEGORY;
+
+-- ============================================================================
+-- 6. RULE-BASED ANOMALY DETECTION (Complements ML)
+-- ============================================================================
+
+-- View: Duplicate invoices (same invoice number from same supplier)
+CREATE OR REPLACE VIEW ANALYTICS.V_DUPLICATE_INVOICES AS
+SELECT 
+    i1.INVOICE_ID AS ORIGINAL_INVOICE,
+    i2.INVOICE_ID AS DUPLICATE_INVOICE,
+    i1.SUPPLIER_ID,
+    s.SUPPLIER_NAME,
+    i1.INVOICE_NUMBER,
+    i1.TOTAL_AMOUNT AS ORIGINAL_AMOUNT,
+    i2.TOTAL_AMOUNT AS DUPLICATE_AMOUNT,
+    i1.SUBMITTED_DATE AS ORIGINAL_DATE,
+    i2.SUBMITTED_DATE AS DUPLICATE_DATE
+FROM CORE.INVOICES i1
+JOIN CORE.INVOICES i2 
+    ON i1.INVOICE_NUMBER = i2.INVOICE_NUMBER 
+    AND i1.SUPPLIER_ID = i2.SUPPLIER_ID 
+    AND i1.INVOICE_ID < i2.INVOICE_ID
+JOIN CORE.SUPPLIERS s ON i1.SUPPLIER_ID = s.SUPPLIER_ID;
+
+-- View: Invoices from inactive/terminated suppliers
+CREATE OR REPLACE VIEW ANALYTICS.V_PHANTOM_VENDOR_INVOICES AS
+SELECT 
+    i.INVOICE_ID,
+    i.SUPPLIER_ID,
+    s.SUPPLIER_NAME,
+    s.IS_ACTIVE,
+    s.RISK_TIER,
+    i.TOTAL_AMOUNT,
+    i.SUBMITTED_DATE,
+    i.STATUS AS INVOICE_STATUS,
+    i.PO_ID
+FROM CORE.INVOICES i
+JOIN CORE.SUPPLIERS s ON i.SUPPLIER_ID = s.SUPPLIER_ID
+WHERE s.IS_ACTIVE = FALSE
+   OR s.RISK_TIER = 'CRITICAL';
+
+-- View: Invoices without matching POs
+CREATE OR REPLACE VIEW ANALYTICS.V_UNMATCHED_INVOICES AS
+SELECT 
+    i.INVOICE_ID,
+    i.SUPPLIER_ID,
+    s.SUPPLIER_NAME,
+    i.TOTAL_AMOUNT,
+    i.SUBMITTED_DATE,
+    i.STATUS,
+    i.NOTES
+FROM CORE.INVOICES i
+JOIN CORE.SUPPLIERS s ON i.SUPPLIER_ID = s.SUPPLIER_ID
+WHERE i.PO_ID IS NULL;
+
+-- View: Payments before invoice approval
+CREATE OR REPLACE VIEW ANALYTICS.V_TIMING_ANOMALIES AS
+SELECT 
+    p.PAYMENT_ID,
+    p.INVOICE_ID,
+    i.INVOICE_ID AS INV_ID,
+    p.SUPPLIER_ID,
+    s.SUPPLIER_NAME,
+    p.AMOUNT,
+    p.PAYMENT_DATE,
+    i.SUBMITTED_DATE AS INVOICE_DATE,
+    i.STATUS AS INVOICE_STATUS,
+    DATEDIFF('day', i.SUBMITTED_DATE, p.PAYMENT_DATE) AS DAYS_BETWEEN,
+    CASE 
+        WHEN p.PAYMENT_DATE < i.SUBMITTED_DATE THEN 'PAYMENT_BEFORE_INVOICE'
+        WHEN i.STATUS = 'PENDING' AND p.STATUS = 'COMPLETED' THEN 'PAYMENT_WITHOUT_APPROVAL'
+        ELSE 'OTHER_TIMING_ISSUE'
+    END AS ANOMALY_TYPE
+FROM CORE.PAYMENTS p
+JOIN CORE.INVOICES i ON p.INVOICE_ID = i.INVOICE_ID
+JOIN CORE.SUPPLIERS s ON p.SUPPLIER_ID = s.SUPPLIER_ID
+WHERE p.PAYMENT_DATE < i.SUBMITTED_DATE
+   OR (i.STATUS = 'PENDING' AND p.STATUS = 'COMPLETED');
+
+-- View: Unusual payment method changes
+CREATE OR REPLACE VIEW ANALYTICS.V_PAYMENT_METHOD_ANOMALIES AS
+WITH supplier_normal_method AS (
+    SELECT 
+        SUPPLIER_ID,
+        PAYMENT_METHOD,
+        COUNT(*) AS METHOD_COUNT,
+        ROW_NUMBER() OVER (PARTITION BY SUPPLIER_ID ORDER BY COUNT(*) DESC) AS RN
+    FROM CORE.PAYMENTS
+    WHERE PAYMENT_DATE < '2026-06-01'
+    GROUP BY SUPPLIER_ID, PAYMENT_METHOD
+)
+SELECT 
+    p.PAYMENT_ID,
+    p.SUPPLIER_ID,
+    s.SUPPLIER_NAME,
+    p.AMOUNT,
+    p.PAYMENT_METHOD AS CURRENT_METHOD,
+    snm.PAYMENT_METHOD AS NORMAL_METHOD,
+    p.PAYMENT_DATE
+FROM CORE.PAYMENTS p
+JOIN CORE.SUPPLIERS s ON p.SUPPLIER_ID = s.SUPPLIER_ID
+JOIN supplier_normal_method snm ON p.SUPPLIER_ID = snm.SUPPLIER_ID AND snm.RN = 1
+WHERE p.PAYMENT_METHOD != snm.PAYMENT_METHOD
+  AND p.PAYMENT_DATE >= '2026-06-01'
+  AND p.AMOUNT > 100000;  -- Only flag large transactions with method changes
+
+-- View: Forecast vs Actual Spend Comparison (consumed by $ml-anomaly-agent)
+CREATE OR REPLACE VIEW ANALYTICS.V_FORECAST_VS_ACTUAL AS
+WITH actual_spend AS (
+    SELECT
+        DATE_TRUNC('MONTH', p.PAYMENT_DATE)::DATE AS SPEND_MONTH,
+        s.CATEGORY,
+        SUM(p.AMOUNT) AS ACTUAL_SPEND
+    FROM CORE.PAYMENTS p
+    JOIN CORE.SUPPLIERS s ON p.SUPPLIER_ID = s.SUPPLIER_ID
+    WHERE p.STATUS = 'COMPLETED'
+      AND p.PAYMENT_DATE >= '2026-06-01'
+    GROUP BY 1, 2
+)
+SELECT
+    COALESCE(a.SPEND_MONTH, f.TS::DATE) AS FORECAST_MONTH,
+    COALESCE(a.CATEGORY, f.SERIES) AS CATEGORY,
+    ROUND(f.FORECAST, 2) AS FORECASTED_SPEND,
+    COALESCE(a.ACTUAL_SPEND, 0) AS ACTUAL_SPEND,
+    ROUND(COALESCE(a.ACTUAL_SPEND, 0) - f.FORECAST, 2) AS VARIANCE,
+    CASE
+        WHEN COALESCE(a.ACTUAL_SPEND, 0) > f.UPPER_BOUND THEN 'OVER_BUDGET'
+        WHEN COALESCE(a.ACTUAL_SPEND, 0) < f.LOWER_BOUND THEN 'UNDER_BUDGET'
+        ELSE 'ON_TRACK'
+    END AS BUDGET_STATUS
+FROM ANALYTICS.SPEND_FORECAST f
+LEFT JOIN actual_spend a
+    ON f.TS::DATE = a.SPEND_MONTH AND f.SERIES = a.CATEGORY
+ORDER BY FORECAST_MONTH, CATEGORY;
+
+-- ============================================================================
+-- VERIFY ML SETUP
+-- ============================================================================
+
+SELECT '✅ ML models trained and anomaly detection views created' AS STATUS;
+
+-- Show anomaly summary
+SELECT 
+    'ML Invoice Anomalies' AS CHECK_TYPE, COUNT(*) AS COUNT FROM ANALYTICS.INVOICE_ANOMALIES WHERE IS_ANOMALY = TRUE
+UNION ALL
+SELECT 'ML Payment Anomalies', COUNT(*) FROM ANALYTICS.PAYMENT_ANOMALIES WHERE IS_ANOMALY = TRUE
+UNION ALL
+SELECT 'Duplicate Invoices', COUNT(*) FROM ANALYTICS.V_DUPLICATE_INVOICES
+UNION ALL
+SELECT 'Phantom Vendor Invoices', COUNT(*) FROM ANALYTICS.V_PHANTOM_VENDOR_INVOICES
+UNION ALL
+SELECT 'Unmatched Invoices (No PO)', COUNT(*) FROM ANALYTICS.V_UNMATCHED_INVOICES
+UNION ALL
+SELECT 'Timing Anomalies', COUNT(*) FROM ANALYTICS.V_TIMING_ANOMALIES
+UNION ALL
+SELECT 'Payment Method Anomalies', COUNT(*) FROM ANALYTICS.V_PAYMENT_METHOD_ANOMALIES;
