@@ -26,7 +26,7 @@ For judging evaluation, please use our 1-click Judge Mode.
 
 ---
 
-## 👨‍⚖️ Judge Quick Start (Snowflake CoCo)
+## Judge Quick Start (Snowflake CoCo)
 
 If you have CoCo CLI installed and want to run the full master orchestrator on your own Snowflake account, follow these requirements:
 - **Expected Runtime**: ~2-4 minutes for the full multi-agent supply chain run.
@@ -56,7 +56,7 @@ SELECT * FROM LEDGERLINK.PUBLIC.AUDIT_LOG ORDER BY TIMESTAMP DESC LIMIT 5;
 
 ---
 
-## 🛡️ Safety & Sandboxing
+##  Safety & Sandboxing
 
 Because this AI system touches financial data and triggers recovery actions (e.g., stopping vendor payments), **safety is our #1 priority**. 
 - **Action-Agent Sandboxing:** In this repository, the action-agent is safely sandboxed. It generates a cryptographic payload and logs the intended financial action to the `AUDIT_LOG` table, but it does *not* make live API calls to external payment gateways (like Stripe or SAP) unless explicitly un-sandboxed.
