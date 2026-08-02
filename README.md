@@ -1,6 +1,6 @@
 # LedgerLink
 
-**A Solo Hackathon Submission**
+** Hackathon Submission**
 
 > **An AI-driven, multi-agent system that autonomously detects supply chain financial anomalies, investigates root causes across structured + unstructured data, and triggers contextual recovery actions — all orchestrated through Snowflake CoCo CLI.**
 
