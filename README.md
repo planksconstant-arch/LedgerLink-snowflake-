@@ -13,6 +13,10 @@
 ### Quick Demo (3 Minutes)
 **[Click here to open the Live Streamlit App](https://ledgerlink--demo.streamlit.app/)**
 
+#### 🎬 Snowflake CoCo CLI Demo Video
+
+<video src="demo/snowflake_cli_demo.mp4" controls width="100%"></video>
+
 For judging evaluation, please use our 1-click Judge Mode.
 **[View the Judges Walkthrough Guide](./docs/judges_walkthrough.md)** for the step-by-step evaluation script.
 
