@@ -15,7 +15,7 @@
 
 #### 🎬 Snowflake CoCo CLI Demo Video
 
-<video src="demo/snowflake_cli_demo.mp4" controls width="100%"></video>
+https://github.com/planksconstant-arch/LedgerLink-snowflake-/raw/master/demo/snowflake_cli_demo.mp4
 
 For judging evaluation, please use our 1-click Judge Mode.
 **[View the Judges Walkthrough Guide](./docs/judges_walkthrough.md)** for the step-by-step evaluation script.
